@@ -7,7 +7,7 @@ import CheckInButton from "@/components/check-in-button"
 import BottomNav from "@/components/bottom-nav"
 import AppHeader from "@/components/app-header"
 
-const EMOTION_COLORS = {
+const EMOTION_COLORS: Record<string, string> = {
   Joy: "#fde047",
   Sadness: "#60a5fa",
   Anger: "#f87171",
@@ -17,6 +17,8 @@ const EMOTION_COLORS = {
   Love: "#f472b6",
   Tired: "#a8a29e",
 }
+
+export const dynamic = "force-dynamic"
 
 export default async function GlobalWrapPage() {
   const supabase = await createClient()
@@ -28,29 +30,38 @@ export default async function GlobalWrapPage() {
     redirect("/auth/login")
   }
 
-  // Get global emotion stats
-  const { data: globalStats } = await supabase.rpc("get_global_emotion_stats")
+  // Get all check-ins with emotions
+  const { data: checkIns } = await supabase.from("check_ins").select("emotion_id, emotions(id, name)")
+
+  // Get total users - use count query
+  const { count: totalUsers } = await supabase.from("profiles").select("*", { count: "exact", head: true })
 
   // Get all emotions for check-in
   const { data: emotions } = await supabase.from("emotions").select("*").order("name")
 
-  // Get total users and check-ins
-  const { count: totalUsers } = await supabase.from("profiles").select("*", { count: "exact", head: true })
-
-  const { count: totalCheckIns } = await supabase.from("check_ins").select("*", { count: "exact", head: true })
+  // Calculate emotion counts from check-ins
+  const emotionCounts: Record<string, { name: string; count: number }> = {}
+  checkIns?.forEach((checkIn: any) => {
+    const emotionName = checkIn.emotions?.name
+    if (emotionName) {
+      if (!emotionCounts[emotionName]) {
+        emotionCounts[emotionName] = { name: emotionName, count: 0 }
+      }
+      emotionCounts[emotionName].count++
+    }
+  })
 
   // Transform data for pie chart
-  const chartData =
-    globalStats?.map((stat: any) => ({
-      name: stat.emotion_name,
-      value: stat.count,
-      color: EMOTION_COLORS[stat.emotion_name as keyof typeof EMOTION_COLORS] || "#94a3b8",
-    })) || []
+  const chartData = Object.values(emotionCounts).map((item) => ({
+    name: item.name,
+    value: item.count,
+    color: EMOTION_COLORS[item.name] || "#94a3b8",
+  }))
+
+  const totalCheckIns = checkIns?.length || 0
 
   const topEmotion =
-    chartData.length > 0
-      ? chartData.reduce((prev: any, current: any) => (prev.value > current.value ? prev : current))
-      : null
+    chartData.length > 0 ? chartData.reduce((prev, current) => (prev.value > current.value ? prev : current)) : null
 
   return (
     <>
@@ -85,7 +96,7 @@ export default async function GlobalWrapPage() {
               <div className="flex items-center gap-3">
                 <TrendingUp className="h-8 w-8 text-green-500" />
                 <div>
-                  <p className="text-2xl font-bold">{totalCheckIns?.toLocaleString() || 0}</p>
+                  <p className="text-2xl font-bold">{totalCheckIns.toLocaleString()}</p>
                   <p className="text-sm text-muted-foreground">Emotions Logged</p>
                 </div>
               </div>
@@ -106,10 +117,10 @@ export default async function GlobalWrapPage() {
           {chartData.length > 0 ? (
             <Card className="glass border-0 p-6">
               <h2 className="mb-6 text-center text-xl font-bold">Global Emotion Distribution</h2>
-              <ResponsiveContainer width="100%" height={400}>
+              <ResponsiveContainer width="100%" height={300}>
                 <PieChart>
-                  <Pie data={chartData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={120} label>
-                    {chartData.map((entry: any, index: number) => (
+                  <Pie data={chartData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} label>
+                    {chartData.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
                   </Pie>
